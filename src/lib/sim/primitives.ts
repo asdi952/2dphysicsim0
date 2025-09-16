@@ -1,3 +1,4 @@
+import { writable, type Updater, type Writable } from "svelte/store";
 import { exit, geterror } from "./error";
 
 
@@ -29,27 +30,27 @@ export class Transform2D{
     }
 }
 
-export class Signal{
+export class Signal<Type>{
     private activated:boolean = false
     private subscribers: (()=>void)[] = []
-    private promise:Promise<void>
-    private promiseResolve?:()=>void
+    private promise:Promise<Type>
+    private promiseResolve?:(data:Type)=>void
 
     constructor(){
-        this.promise = new Promise<void>((r)=>{this.promiseResolve = r})
+        this.promise = new Promise<Type>((r)=>{this.promiseResolve = r})
     }
 
-    activate(){
+    activate(data:Type){
         if(this.activated == true){exit(`signal already activated`); return}
         this.activated = true
 
         this.subscribers.forEach(s=>s())
 
         if(this.promiseResolve == undefined){exit("promise resolve undefined");return}
-        this.promiseResolve()
+        this.promiseResolve(data)
     }
 
-    wait(){return this.promise}
+    wait():Promise<Type>{return this.promise}
 
     subscribe(callback:()=>void){
         this.subscribers.push(callback)
@@ -57,7 +58,7 @@ export class Signal{
 
     reset(){
         this.promiseResolve = undefined
-        this.promise = new Promise<void>((r)=>{this.promiseResolve = r})
+        this.promise = new Promise<Type>((r)=>{this.promiseResolve = r})
         this.subscribers = []
         this.activated = false
     }
@@ -65,8 +66,8 @@ export class Signal{
 
 
 export class FixedList<Type>{
-    arr:(Type|undefined)[] = []
-    free:number[] = []
+    private arr:(Type|undefined)[] = []
+    private free:number[] = []
 
     //return index
     push(value:Type):number{
@@ -171,4 +172,165 @@ export function getprojmat( width:number, height:number):Matrix4x4{
         0, 0, 1, 0, 
         0, 0, 0, 1,    
     ]))
+}
+
+
+
+class WeakPointer<Type>{
+    constructor(
+        public mpt:MasterPointer<Type>|null,
+    ){}
+    
+    get(){
+        if(this.mpt == null){return undefined}
+        return this.mpt.ptr
+    }
+}
+class MasterPointer<Type>{
+    weakpt:WeakPointer<Type>[] = []
+    constructor(
+        public ptr: Type,
+    ){}
+
+    get():Type{
+        return this.ptr
+    }
+
+    get_weakptr(){
+        return new WeakPointer(this)
+    }
+
+    delete(){
+        this.weakpt.forEach(w=>{w.mpt = null})
+    }
+}
+
+export function createCounter(){
+    let count = 0
+    return ()=>{
+        const aux = count
+        count += 1
+        return aux
+    }
+}
+
+export class DoubleKeyMap<K0, K1, V> {
+    private map = new Map<string, V>();
+
+    private makeKey(k0: K0, k1: K1): string {
+        return `${String(k0)}::${String(k1)}`;
+    }
+
+    get(k0: K0, k1: K1): V | undefined {
+        return this.map.get(this.makeKey(k0, k1));
+    }
+
+    set(k0: K0, k1: K1, value: V): this {
+        this.map.set(this.makeKey(k0, k1), value);
+        return this;
+    }
+
+    has(k0: K0, k1: K1): boolean {
+        return this.map.has(this.makeKey(k0, k1));
+    }
+
+    delete(k0: K0, k1: K1): boolean {
+        return this.map.delete(this.makeKey(k0, k1));
+    }
+}
+
+class SmartPointerRef<Type>{
+    constructor(
+        private ref: SmartPointer<Type>
+    ){}
+
+    get():Type{
+        return this.ref.ptr!
+    }
+    set(value:Type){
+        this.ref.ptr = value
+    }
+    delete(){
+        this.ref.delete_ref()
+    }
+
+    clone(){
+        return this.ref.create_ref()
+    }
+}
+
+class SmartPointer<Type>{
+    static manager: FixedList<SmartPointer<any>> = new FixedList()
+    manager_ticket:number
+
+    refcount:number = 0
+
+    private constructor(
+        public ptr?:Type
+    ){
+        this.manager_ticket = SmartPointer.manager.push(this)
+    }
+
+    static create<Type>(data:Type){
+        const self = new SmartPointer(data)
+        return self.create_ref()
+    }
+
+    create_ref(){
+        this.refcount += 1
+        return new SmartPointerRef(this)
+    }
+
+    delete_ref(){
+        this.refcount--
+        this.ptr = undefined
+        if(this.refcount == 0){SmartPointer.manager.remove(this.manager_ticket)}
+    }
+}
+
+export class MWritable<T> implements Writable<T> {
+    private store: Writable<T>;
+    public data: T;
+
+    constructor(initial: T) {
+        this.data = initial;
+        this.store = writable(initial);
+    }
+
+    // store methods
+    subscribe(run: (value: T) => void, invalidate?: (value?: T) => void) {
+        return this.store.subscribe(run, invalidate);
+    }
+
+    set(value: T) {
+        this.data = value;
+        this.store.set(value);
+    }
+
+    update(updater: Updater<T>) {
+        const value = updater(this.data);
+        this.data = value;
+        this.store.set(value);
+    }
+
+    // extra method
+    get(): T {
+        return this.data;
+    }
+}
+
+export function mwritable<T>(value:T){
+    return new MWritable(value)
+}
+
+export type Tuple<T extends unknown[]> = T;
+
+export function makeTuple<T extends unknown[]>(...args: T): T {
+  return args;
+}
+
+export class Ptr<T>{
+    constructor(
+        public ptr:T
+    ){}
 }

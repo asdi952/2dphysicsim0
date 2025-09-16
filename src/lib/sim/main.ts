@@ -1,24 +1,18 @@
 import { AssertError, exit, geterror, printErrorStack } from "./error";
-import { getmodelmat, Signal, Transform2D, Vec2 } from "./primitives";
-import { Camera, Canvas, CanvasState, generate_elmindex, MeshV0, RenderElmV0, RenderEngine, RenderInstance, RenderWorld, Shader, ShaderV0, Viewport } from "./render";
+import { createCounter, getmodelmat, makeTuple, MWritable, Signal, Transform2D, Vec2, type Tuple } from "./primitives";
+import { RenderEngine } from "./render/engine";
+import { generate_elmindex, MeshV0 } from "./render/mesh";
+import { Canvas, RenderInstance, RenderObjV0, RenderWorld, Viewport } from "./render/render";
+import { ShaderV0 } from "./render/shader";
+import { DataResourcer } from "./resourcer";
 
 
-export const canvas = new Canvas(800,700)
-export const s_canvasloaded = new Signal()
 
 
-function init(){
-    if(!canvas.elm) throw geterror("!canvaselm.canvas")
-    const gl = canvas.elm.getContext("webgl2")
+
+async function app(sim: Sim){
+    const [celm, cwidth, cheight] = await sim.s_canvasloaded.wait()
     
-    if(!gl) throw geterror("webgl2 fail to load")
-    canvas.setState(new CanvasState(gl, canvas)) 
-}
-
-async function app(){
-    await s_canvasloaded.wait()
-    init()
-
     const mesh_vertex = new Float32Array([
         -0.5, -0.5,
         0.3,0.2,
@@ -26,21 +20,22 @@ async function app(){
         -1, 0,
     ])
 
-    const cstate = canvas.state!
-    const gl = cstate.gl
-
     const mesh = new MeshV0(mesh_vertex, generate_elmindex(mesh_vertex))
     const shader = new ShaderV0()
-    const relm = new RenderElmV0(mesh)
-
-    const rviewport = new Viewport(cstate, Vec2.Zero(), Vec2.Defined(canvas.width, canvas.height))
+    console.log()
+    const relm = new RenderObjV0(mesh)
+    
     const rengine = new RenderEngine()
+    
+    const rviewport = new Viewport(Vec2.Zero(), Vec2.Defined(cwidth.get(), cheight.get()))
+    const world = RenderWorld.create_default()
+    const canvas = new Canvas(celm, cwidth, cheight)
+    
 
-    const world = new RenderWorld()
-    const instance = rengine.createInstance(rviewport)
-    instance.setworld(world)    
+    const rinstance = new RenderInstance(canvas, rviewport, world)
+    rengine.add_instance(rinstance)
 
-    world.add_elms([relm],shader)
+    world.add_renderobjs([relm],shader)
 
 
 
@@ -51,56 +46,39 @@ async function app(){
     const ss = rengine.contexts.get(0)!.shaders.values().next().value!.shader
     console.log(shader)
 
-    let numAttribs = gl.getProgramParameter(ss.program, gl.ACTIVE_UNIFORMS);
-
-    for (let i = 0; i < numAttribs; i++) {
-        const info = gl.getActiveUniform(ss.program, i);
-        if (info) {
-            console.log("Attrib:", info.name, "type:", info.type, "size:", info.size);
-            const loc = gl.getUniformLocation(ss.program, info.name);
-            console.log("  location:", loc);
-        }
-    }
-
-    numAttribs = gl.getProgramParameter(ss.program, gl.ACTIVE_ATTRIBUTES);
-
-    for (let i = 0; i < numAttribs; i++) {
-        const info = gl.getActiveAttrib(ss.program, i);
-        if (!info) continue;
-
-        const location = gl.getAttribLocation(ss.program, info.name);
-
-        console.log("Vertex Input:", {
-            name: info.name,       // e.g. "vposition"
-            type: info.type,       // e.g. gl.FLOAT_VEC2
-            size: info.size,       // array size (usually 1)
-            location               // index to bind buffer with gl.vertexAttribPointer
-        });
-    }
-
     setInterval(()=>{
         t.position.x += 1 * 0.01
         relm.uniforms.mvp.value = getmodelmat(t)
         rengine.render()
     },10)
 
-    // const camera = new Camera(Vec2.Zero(), Vec2.Defined(10,10))
-    // const renderworld = new RenderWorld(camera)
-    // const rinstance = new RenderInstance(renderworld, rviewport)
-    
 
-    
 }
 
-export async function main(){
-    try{
-        await app()
-    }catch(error:any){
-        switch(error.constructor){
-            case AssertError:
-                const asserterror = error as AssertError
-                await printErrorStack(asserterror)
-                break
+export class Sim{
+    s_canvasloaded = new Signal<Tuple<[HTMLCanvasElement, MWritable<number>, MWritable<number>]>>()
+
+    constructor(){}
+
+    init(){
+        return makeTuple(this.s_canvasloaded)
+    }
+
+    deinit(){}
+
+    async run(){
+        try{
+            await app(this)
+        }catch(error:any){
+            switch(error.constructor){
+                case AssertError:
+                    const asserterror = error as AssertError
+                    await printErrorStack(asserterror)
+                    break
+            }
         }
     }
 }
+
+
+
