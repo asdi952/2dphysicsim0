@@ -225,9 +225,15 @@ class ShaderPrefab{
     ){}
 }
 
+class ShaderRenderObj{
+
+    constructor(
+        public shader:Shader,
+    ){}
+}
 
 export class RenderContext{
-    shaders:Map<ShaderSources, ShaderPrefab> = new Map()
+    shaders:Map<ShaderSources, ShaderRenderObj> = new Map()
     vbos:DoubleKeyMap<GLenum, any, WebGLBuffer> = new DoubleKeyMap()
     constructor(
         public sparentindex:number,

@@ -1,12 +1,13 @@
 import { geterror } from "../error";
 import { Vec2, type Ptr } from "../primitives";
-import { ShaderBindingsDataDescriptions} from "./shader";
+import { getGLTypeInfo } from "./webgl";
+
+
 
 
 export interface Mesh {
-    bindings:ShaderBindingsDataDescriptions
     faceindex: Uint16Array,
-    faceshape: GLenum,
+    pshape: GLenum,
 }
 
 export class MeshV0{
@@ -15,72 +16,81 @@ export class MeshV0{
         public elmindex:Uint16Array,
     ){}
 }
-export class MeshV1 implements Mesh{
-    facecount:number
-    bindings = new ShaderBindingsDataDescriptions([
-        {name: "position", type: Vec2, perinstance: 0},
-    ],[])
 
+export type ArrayDataType = Float16Array | Float32Array | Uint16Array | Uint32Array | Int16Array | Int32Array
+export type ArrayDataTypeCtor = ArrayDataType["constructor"]
+
+export class MeshVertexDataFormat{
     constructor(
-        public faceindex: Uint16Array,
-        public faceshape: GLenum,
-        
-        public vpos: Float32Array,
-        // public vcolor?: Ptr<Float32Array>,
-        // public vuv?: Ptr<Float32Array>  ,
-    ) {
-        // Compute face count based on primitive type
-        switch (faceshape) {
+        public unittype:GLenum,
+        public unitspervert:number,
+        public offset:number,
+        public stride:number,
+    ){}
+}
+
+export class MeshVertexData{
+    constructor(
+        public data:ArrayDataType,
+        public format:MeshVertexDataFormat,
+    ){
+        // veridy if vertex data inst cut at the end of array
+        const vertdatasize = getGLTypeInfo(this.format.unittype).bsize * this.format.unitspervert
+        if((this.data.length - this.format.offset)%this.format.stride < vertdatasize){throw geterror(`vert data of ${this} is cut at the end of the data array`)}
+    }
+
+    getvertexcount(){
+        return Math.floor((this.data.length - this.format.offset)/this.format.stride)
+    }
+}
+
+
+export class MeshPrimitiveData{
+    pcount:number
+    constructor(
+        public pdata:ArrayDataType,
+        public pshape: GLenum,
+    ){
+        switch (pshape) {
             case WebGL2RenderingContext.TRIANGLES:
-                if (faceindex.length % 3 !== 0) {throw geterror("faceindex length must be multiple of 3 for TRIANGLES")}
-                this.facecount = faceindex.length / 3;
+                if (pdata.length % 3 !== 0) {throw geterror("pdata length must be multiple of 3 for TRIANGLES")}
+                this.pcount = pdata.length / 3;
                 break;
 
             case WebGL2RenderingContext.LINES:
-                if (faceindex.length % 2 !== 0) {throw geterror("faceindex length must be multiple of 2 for LINES");}
-                this.facecount = faceindex.length / 2;
+                if (pdata.length % 2 !== 0) {throw geterror("pdata length must be multiple of 2 for LINES");}
+                this.pcount = pdata.length / 2;
                 break;
 
             case WebGL2RenderingContext.LINE_STRIP:
-                this.facecount = Math.max(faceindex.length - 1, 0);
+                this.pcount = Math.max(pdata.length - 1, 0);
                 break;
 
             case WebGL2RenderingContext.TRIANGLE_STRIP:
             case WebGL2RenderingContext.TRIANGLE_FAN:
-                this.facecount = Math.max(faceindex.length - 2, 0);
+                this.pcount = Math.max(pdata.length - 2, 0);
                 break;
 
             default:
-                throw geterror(`Unsupported facetype: ${faceshape}`);
+                throw geterror(`Unsupported facetype: ${pshape}`);
         }
-
     }
 }
 
-// class Mesh{
+export class MeshV1{
+    constructor(
+        public primitive:MeshPrimitiveData,
+        public vpos: MeshVertexData,
+    ) {
+        if(!this.check_data_coesion()){throw geterror("failed to get data coesions")}
+    }
 
-// }
+    check_data_coesion(){
+        const vpos_vertcount = this.vpos.getvertexcount()
+        return true
+    }
+}
 
-// class ShaderMeshBidings{
-
-// }
-
-// class ShaderMesh{
-//     constructor(
-//         public mesh:Mesh,
-//         public shader:Shader,
-//         public bindings: Tuple<[string, string]>[]
-//     ){
-//         this.validate_bindings()
-//     }
-
-//     validate_bindings(){
-
-//     }
-// }
-// const mesh = new Mesh()
-// const shader = new Shader()
-// const obj0 = new ShaderMesh()
 
 export function generate_elmindex(vertex: Float32Array){
     if(vertex.length%2 != 0){throw geterror("vertex nust me pair of 2")}

@@ -1,7 +1,8 @@
 import { geterror } from "../error";
 import { Matrix4x4, Ptr, Vec2 } from "../primitives";
-import type { Mesh } from "./mesh";
+import type { ArrayDataType, Mesh, MeshPrimitiveData } from "./mesh";
 import type { RenderContext } from "./render";
+import { get_webgltype, getGLTypeInfo, type GLTypeInfo } from "./webgl";
 
 
 
@@ -43,7 +44,7 @@ function createProgram(gl: WebGL2RenderingContext, vertexShader: WebGLShader, fr
 }
 
 
-function create_shaderserverbindings(gl:WebGL2RenderingContext, program:WebGLProgram):ShaderNeededBindings{
+function create_shaderBindingDescriptions(gl:WebGL2RenderingContext, program:WebGLProgram):ShaderBindingDescriptions{
     const vattributes = new Map<string, ShaderBindingDescription>()
     let len = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES);
 
@@ -57,6 +58,7 @@ function create_shaderserverbindings(gl:WebGL2RenderingContext, program:WebGLPro
             info.name,
             location,
             info.type,
+            info.size,
         ))
     }
 
@@ -73,84 +75,85 @@ function create_shaderserverbindings(gl:WebGL2RenderingContext, program:WebGLPro
             info.name,
             location as number,
             info.type,
+            info.size,
         ))
     }
 
-    return new ShaderNeededBindings( vattributes, uniforms)
+    return new ShaderBindingDescriptions( vattributes, uniforms)
 }
 
-class VertexAttributeDescription{
+//---------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------
+class ShaderBindingVertexAttr{
+    link?:RenderObjVertexAttribute
     constructor(
-        public type:Function,
-        public webgltype:GLenum,
-        public indexspervertex:number,
-        public indextype:GLenum,
-        public bytesize:number,
-        public stride:number
+        public datastride:number,
+        public dataoffset:number,
     ){}
+}
 
-    static create(type:Function){
-        switch(type){
-            case Matrix4x4:
-                return new VertexAttributeDescription(
-                    type,
-                    WebGL2RenderingContext.FLOAT_MAT4,
-                    4,
-                    WebGL2RenderingContext.FLOAT,
-                    4*4*4,
-                    4*4,
-                )
-            case Vec2:
-                return new VertexAttributeDescription(
-                    type,
-                    WebGL2RenderingContext.FLOAT_VEC2,
-                    2,
-                    WebGL2RenderingContext.FLOAT,
-                    2*4,
-                    2*4,
-                )
-                default:
-                    throw geterror(`type ${type} not implemtnted`)
-        }
+class ShaderBindingInstanceAttr{
+    link?:RenderObjInstanceAttribute
+    constructor(
+        public perinstance:number,
+    ){
+        if(this.perinstance == 0){throw geterror("perinstance cant be 0, for that use ShaderBindingTypeIntanceAttr")}
     }
 }
 
-
-
-
-function get_webgltype(type:Function){
-    switch(type){
-        case Matrix4x4:return WebGL2RenderingContext.FLOAT_MAT4
-        case Vec2:return WebGL2RenderingContext.FLOAT_VEC2
-        default:
-            throw geterror(`webgltype for ${type} not implemented`)
-    }
+class ShaderBindingUniform{
+    link?:RenderObjUniform
+    constructor(
+    ){}
 }
 
+type ShaderBindingType = ShaderBindingVertexAttr | ShaderBindingInstanceAttr | ShaderBindingUniform
 
-export class ShaderBindingDataDescription{
+class ShaderBindingDescriptionReq<T extends ShaderBindingType>{
     constructor(
         public name:string,
-        public type:Function,
-        public perinstance:number,
-        public data:any
+        public datatype:Function,
+        public arraylength:number,
+        public bindingtype:T,
     ){}
 }
 
-export class ShaderBindingDataDescriptions{
+class ShaderBindingDescriptionReqs{
     constructor(
-        public vattributes:ShaderBindingDataDescription[],
-        public uniforms:ShaderBindingDataDescription[],
+        public vertexattrs:ShaderBindingDescriptionReq<ShaderBindingVertexAttr>[],
+        public instanceattrs:ShaderBindingDescriptionReq<ShaderBindingInstanceAttr>[],
+        public uniforms:ShaderBindingDescriptionReq<ShaderBindingUniform>[],
     ){}
 }
 
+const reqs = new ShaderBindingDescriptionReqs([
+    {name:"position", datatype:Vec2, arraylength:1, bindingtype: {dataoffset:0, datastride:0}},
+    {name:"color", datatype:Vec3, arraylength:1, bindingtype: {dataoffset:0, datastride:0}},
+],[
+    {name:"sdgdsfs", datatype:Matrix4x4, arraylength:1, bindingtype: {perinstance:1}},
+    {name:"cococ", datatype:Matrix4x4, arraylength:1, bindingtype: {perinstance:1}},
+    {name:"sos", datatype:Matrix4x4, arraylength:2, bindingtype: {perinstance:1}},
+],[
+    {name:"sdgsdgg", datatype:Matrix4x4, arraylength:1, bindingtype: {}},
+])
 
+function test(){
+    setdata([transform.mat, 123])
+}
+
+//---------------------------------------------------------------------------------------------------------
 class ShaderBindingDescription{
+    readonly gltypeinfo:GLTypeInfo
     constructor(
         public name:string,
         public location:number,
-        public webgltype:GLenum,
-    ){}
+        webgltype:GLenum,
+        public arraylength:number,
+    ){
+        this.gltypeinfo = getGLTypeInfo(webgltype)
+    }
 }
 
 class ShaderBindingDescriptions{
@@ -160,166 +163,225 @@ class ShaderBindingDescriptions{
     ){}
 }
 
-class ShaderBinding{
+class ShaderBinding<T extends ShaderBindingType>{
     constructor(
-        public name:string,
-        public attrdesc:VertexAttributeDescription,
-        public perinstance:number,
-        public location:number,
-        public databinding: ShaderBindingDataDescription,
+        public type:T,
+        public desc:ShaderBindingDescription,
+        
+        public req?: ShaderBindingDescriptionReq<T>,
     ){}
 }
 
-class ShaderBindingsList{
+class ShaderBindings{
     constructor(
-        public vattributes:ShaderBinding[],
-        public uniforms:ShaderBinding[],
+        public vertexattrs:ShaderBinding<ShaderBindingVertexAttr>[],
+        public instanceattrs:ShaderBinding<ShaderBindingInstanceAttr>[],
+        public uniforms:ShaderBinding<ShaderBindingUniform>[], 
     ){}
 }
 
-class ShaderBindingInstanceDataLink{
-    constructor(
-        public instancer:RenderObjInstancer,
-        public attrindex:number,
-        public instanceindex:number,
-        public datatype:Function,
-    ){}
 
-    set(data:any){
-        if(!(data instanceof this.datatype)){throw geterror(`data should be type ${this.datatype} and is type ${typeof data}`)}
-        this.instancer.set()
+
+export function create_shaderbindingslist(gl:WebGL2RenderingContext, binddescs:ShaderBindingDescriptions, bindreqs:ShaderBindingDescriptionReqs):ShaderBindings{
+    const vertexattrs = []
+    for(const vattr of bindreqs.vertexattrs){
+        const desc = binddescs.vattributes.get(vattr.name)
+        if(desc == undefined){throw geterror(`shader Bindings has no binding called ${vattr.name}`)}
+        const vattrinfo = get_webgltype(vattr.datatype)
+        if(vattrinfo.type != desc.gltypeinfo.type){throw geterror(`the vertex attribute ${vattr.name} binding does not have the same type ${vattrinfo.type} - ${desc.gltypeinfo.type} `)}
+
+        vertexattrs.push(new ShaderBinding<ShaderBindingVertexAttr>(vattr.bindingtype, desc, vattr))
     }
-}
-class ShaderBindingVertexDataLink{
-    constructor(
-        public instancer:RenderObjInstancer,
-        public attrindex:number,
-        public datatype:Function,
-    ){}
 
-    set(data:any){
-        if(!(data instanceof this.datatype)){throw geterror(`data should be type ${this.datatype} and is type ${typeof data}`)}
-        this.instancer.set()
+    const instanceattrs = []
+    for(const iattr of bindreqs.instanceattrs){
+        const desc = binddescs.vattributes.get(iattr.name)
+        if(desc == undefined){throw geterror(`shader Bindings has no binding called ${iattr.name}`)}
+        const iattrinfo = get_webgltype(iattr.datatype)
+        if(iattrinfo.type != desc.gltypeinfo.type){throw geterror(`the vertex attribute ${iattr.name} binding does not have the same type ${iattrinfo.type} - ${desc.gltypeinfo.type} `)}
+
+        instanceattrs.push(new ShaderBinding<ShaderBindingInstanceAttr>(iattr.bindingtype, desc, iattr))
     }
-}
 
-class ShaderBindingLinks{
-    constructor(
-        vertexdatalinks: ShaderBindingVertexDataLink[],
-        instanceddatalinks: ShaderBindingInstanceDataLink[],
-    ){}
-}
-
-export function create_shaderbindingslist(gl:WebGL2RenderingContext, neededBindings:ShaderNeededBindings, wantedbidings:ShaderWantedBindings[]){
-    const vattributes = []
     const uniforms = []
+    for(const uni of bindreqs.uniforms){
+        const desc = binddescs.uniforms.get(uni.name)
+        if(desc == undefined){throw geterror(`shader Bindings has no binding called ${uni.name}`)}
+        const uniinfo = get_webgltype(uni.datatype)
+        if(uniinfo.type != desc.gltypeinfo.type){throw geterror(`the vertex attribute ${uni.name} binding does not have the same type ${uniinfo.type} - ${desc.gltypeinfo.type} `)}
 
-    for(const biding of wantedbidings){
-        for(const [wvname, wvtype] of biding.vattributes){
-            const nvdesc = neededBindings.vattributes.get(wvname)
-            if(nvdesc == undefined){throw geterror(`server has no binding called ${wvname}`)}
+        uniforms.push(new ShaderBinding<ShaderBindingUniform>(uni.bindingtype, desc, uni))
+    }
 
-            if(wvtype != nvdesc.webgltype){ throw geterror(`the vertex attribute ${wvname} binding does not have the same type ${wvtype} - ${nvdesc.webgltype} `)}
+    return new ShaderBindings(vertexattrs, instanceattrs, uniforms)
+}
 
-            vattributes.push(new ShaderBinding(
-                wvname,
-                VertexAttributeDescription.create(wvtype),
-                wvtype.perinstance,
-                nvdesc.location,
-                cvdata.data,
-            ))
-        }
 
-        for(const [cvname, cvdata] of client.uniforms){
-            const svdesc = server.uniforms.get(cvname)
-            if(svdesc == undefined){throw geterror(`server has no binding called ${cvname}`)}
+//----------------------------------------------------------------------------------------------------
+class ArrayLocation<T>{
+    constructor(
+        public location:T,
+        public index:number,
+    ){}
+}
 
-            if(cvdata.webgltype != svdesc.webgltype){ throw geterror(`the vertex attribute ${cvname} binding does not have the same type ${cvdata.webgltype} - ${svdesc.webgltype} `)}
+class RenderObjVertexAttribute{
+    constructor(
+        public instancer:ArrayLocation<RenderObjInstancer>,
+        public binding:ShaderBinding<ShaderBindingVertexAttr>,
+        public vbo:WebGLBuffer,
+    ){}
 
-            uniforms.push(new ShaderBinding(
-                cvname,
-                VertexAttributeDescription.create(gl, cvdata.data.ptr),
-                cvdata.perinstance,
-                svdesc.location,
-                cvdata.data,
-            ))
+    setdata(data:ArrayDataType){
+        if(!(data instanceof this.binding.desc.gltypeinfo.arrayType)){throw geterror(`not the correct type, ${typeof data} -> ${this.binding.desc.gltypeinfo.arrayType}`)}
+
+        const gl = this.instancer.location.ctx.canvas.gl
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo)
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
+    }
+}
+
+class RenderObjInstanceAttribute{
+    data:Float32Array = new Float32Array([])
+    instancecount:number = 0
+    constructor(
+        public instancer:ArrayLocation<RenderObjInstancer>,
+        public binding:ShaderBinding<ShaderBindingInstanceAttr>,
+        public vbo:WebGLBuffer,
+    ){}
+
+
+    instantiate(data:[ string, ArrayDataType]){
+        this.binding.desc.gltypeinfo.type
+    }
+}
+
+class RenderObjUniform{
+    constructor(
+        public instancer:ArrayLocation<RenderObjInstancer>,
+        public binding:ShaderBinding<ShaderBindingUniform>,
+    ){}
+}
+
+class RenderObjPrimitive{
+    pcount:number = 0
+    constructor(
+        public pshape:GLenum,
+    ){}
+
+    setdata(pdata:ArrayDataType){
+        switch (this.pshape){
+            case WebGL2RenderingContext.TRIANGLES:
+                if (pdata.length % 3 !== 0) {throw geterror("pdata length must be multiple of 3 for TRIANGLES")}
+                this.pcount = pdata.length / 3;
+                break;
+
+            case WebGL2RenderingContext.LINES:
+                if (pdata.length % 2 !== 0) {throw geterror("pdata length must be multiple of 2 for LINES");}
+                this.pcount = pdata.length / 2;
+                break;
+
+            case WebGL2RenderingContext.LINE_STRIP:
+                this.pcount = Math.max(pdata.length - 1, 0);
+                break;
+
+            case WebGL2RenderingContext.TRIANGLE_STRIP:
+            case WebGL2RenderingContext.TRIANGLE_FAN:
+                this.pcount = Math.max(pdata.length - 2, 0);
+                break;
+
+            default:
+                throw geterror(`Unsupported facetype: ${this.pshape}`);
         }
     }
-    return new ShaderBindingsList(vattributes, uniforms)
-}
-
-class RenderObjInstanceData{
-    constructor(
-        public data:Float32Array,
-        public binding:ShaderBinding,
-        public vbo:WebGLBuffer,
-    ){}
-}
-
-class RenderObjVertexData{
-    constructor(
-        public binding:ShaderBinding,
-        public vbo:WebGLBuffer,
-    ){}
-}
-
-class RenderObjFacesIndex{
-    constructor(
-        public vbo:WebGLBuffer,
-    ){}
 }
 
 class RenderObjInstancer{
-    instancesdata: RenderObjInstanceData[] = []
-    vertexattrsdata:RenderObjVertexData[] = []
+    vertexattrs:RenderObjVertexAttribute[] = []
+    instancesattrs:RenderObjInstanceAttribute[] = []
+    uniforms:RenderObjUniform[] = []
+    primitive:RenderObjPrimitive
 
     vao:WebGLVertexArrayObject
-    elmindex_vbo:WebGLBuffer
     constructor(
-        gl:WebGL2RenderingContext,
-        public mesh:Mesh,
-        public bindings:ShaderBindingsList,
-    ){
+        public ctx:RenderContext,
+        public bindings:ShaderBindings,
+    ){  
+        const gl = this.ctx.canvas.gl
         this.vao = gl.createVertexArray()
         gl.bindVertexArray(this.vao) 
-        
-        
-        for(const attr of bindings.vattributes){
+
+        for(const vbind of bindings.vertexattrs){
             const vbo = gl.createBuffer()
             gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
-            gl.bufferData(gl.ARRAY_BUFFER, null, gl.STATIC_DRAW)
             
-            const iterations = attr.attrdesc.bytesize / attr.attrdesc.stride
-            for(let i=0; i<iterations; i++){
-                const loc = attr.location + i;
-                
-                gl.vertexAttribPointer(loc, attr.attrdesc.indexspervertex, attr.attrdesc.indextype, false, attr.attrdesc.stride, attr.attrdesc.bytesize)
-                gl.enableVertexAttribArray(loc);
-                gl.vertexAttribDivisor(loc,attr.perinstance)
-            }
-            
-            if(attr.perinstance == 0){
-                const vertexattr = new RenderObjVertexData(attr, vbo)
-                const index = this.vertexattrsdata.length
-                this.vertexattrsdata.push(vertexattr)
-                
-                const link = new ShaderBindingVertexDataLink(this, index, attr.attrdesc.type)
-            }else{
-                const instance = new RenderObjInstanceData(new Float32Array([]),attr, vbo)
-                const instanceindex = 0
-                const attrindex = this.instancesdata.length
-                this.instancesdata.push(instance)
-                
-                const link = new ShaderBindingInstanceDataLink(this, attrindex, instanceindex, attr.attrdesc.type)
+            const attrindex = this.vertexattrs.length
+            const vertexattr = new RenderObjVertexAttribute(new ArrayLocation(this, attrindex), vbind, vbo)
+            this.vertexattrs.push(vertexattr)
+
+            if(vbind.req == undefined){throw geterror(`binding ${vbind} has databind is not defined`)}
+            if(vbind.req.bindingtype.link != undefined){throw geterror(`binding ${vbind} has databind link already defined`)}
+            vbind.req.bindingtype.link = vertexattr
+
+            for(let arr=0; arr<vbind.desc.arraylength; arr++){
+                const arroffset = arr * vbind.desc.gltypeinfo.bsize // offset per array 
+                for(let i=0; i<vbind.desc.gltypeinfo.decomposition.iteration;i++){
+                    const loc = vbind.desc.location + vbind.desc.gltypeinfo.decomposition.iteration*arr + i 
+                    gl.vertexAttribPointer(
+                        loc, vbind.desc.gltypeinfo.decomposition.baseGlTypeLength,
+                        vbind.desc.gltypeinfo.baseGLType, false,
+                        vbind.type.datastride, vbind.type.dataoffset + arroffset + i * vbind.desc.gltypeinfo.decomposition.bsize
+                    )
+                    gl.enableVertexAttribArray(loc);
+                    gl.vertexAttribDivisor(loc, 0)
+                }
             }
         }
 
-        const links = new ShaderBindingLinks()
-        
-        this.elmindex_vbo = gl.createBuffer()
-        gl.bindBuffer
+        for(const ibind of bindings.instanceattrs){
+            const vbo = gl.createBuffer()
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo)
+            
+            const instanceindex = this.instancesattrs.length
+            const instanceattr = new RenderObjInstanceAttribute(new ArrayLocation(this, instanceindex), ibind, vbo)
+            this.instancesattrs.push(instanceattr)
+
+            if(ibind.req == undefined){throw geterror(`binding ${ibind} has databind is not defined`)}
+            if(ibind.req.bindingtype.link != undefined){throw geterror(`binding ${ibind} has databind link already defined`)}
+            ibind.req.bindingtype.link = instanceattr
+
+            for(let arr=0; arr<ibind.desc.arraylength; arr++){
+                const arroffset = arr * ibind.desc.gltypeinfo.bsize // offset per array 
+                for(let i=0; i<ibind.desc.gltypeinfo.decomposition.iteration;i++){
+                    const loc = ibind.desc.location + ibind.desc.gltypeinfo.decomposition.iteration*arr + i 
+                    gl.vertexAttribPointer(
+                        loc, ibind.desc.gltypeinfo.decomposition.baseGlTypeLength,
+                        ibind.desc.gltypeinfo.baseGLType, false,
+                        0, arroffset + i * ibind.desc.gltypeinfo.decomposition.bsize
+                    )
+                    gl.enableVertexAttribArray(loc);
+                    gl.vertexAttribDivisor(loc, 0)
+                }
+            }
+
+        }
+
+        for(const ubind of bindings.uniforms){
+            const uniformindex = this.uniforms.length
+            const uniform = new RenderObjUniform(new ArrayLocation(this, uniformindex), ubind)
+            this.uniforms.push(uniform)
+
+            if(ubind.req == undefined){throw geterror(`binding ${ubind} has databind is not defined`)}
+            if(ubind.req.bindingtype.link != undefined){throw geterror(`binding ${ubind} has databind link already defined`)}
+            ubind.req.bindingtype.link = uniform
+        }
+
+        this.primitive = new RenderObjPrimitive()
+
 
         gl.bindVertexArray(null)
+
+       
     }
 
     render(gl:WebGL2RenderingContext){
@@ -357,11 +419,10 @@ export function build_shader(gl:WebGL2RenderingContext, sources:ShaderSources):S
 
     const program = createProgram(gl, vertsh, fragsh)
     
-    const shaderbindings = create_shaderserverbindings(gl, program)
+    const shaderbindings = create_shaderBindingDescriptions(gl, program)
 
     gl.deleteShader(vertsh)
     gl.deleteShader(fragsh)
-
 
     return new Shader(sources, program, shaderbindings)
 }
@@ -371,11 +432,11 @@ export class Shader{
     constructor(
         public sources:ShaderSources,
         public program:WebGLProgram,
-        private serverbindings:ShaderNeededBindings,
+        private bindings:ShaderBindingDescriptions,
     ){}
 
     create_shaderbindings(){
-        return Object.assign({},this.serverbindings)
+        return Object.assign({},this.bindings)
     }
 
 }

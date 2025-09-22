@@ -4,14 +4,26 @@ import { exit, geterror } from "./error";
 
 
 export class Vec2{
-    x:number
-    y:number
-
-    constructor(x:number, y:number){ this.x = x; this.y = y}
+    constructor(
+        public x:number,
+        public y:number,
+    ){}
 
     static Defined(x:number, y:number){return new Vec2(x,y)}
     static Zero(){return new Vec2(0,0)}
     static One(){return new Vec2(1,1)}
+}
+
+export class Vec3{
+    constructor(
+        public x:number,
+        public y:number,
+        public z:number,
+    ){}
+
+    static Defined(x:number, y:number, z:number){return new Vec3(x,y,z)}
+    static Zero(){return new Vec3(0,0,0)}
+    static One(){return new Vec3(1,1,1)}
 }
 
 export class Transform2D{
@@ -333,4 +345,26 @@ export class Ptr<T>{
     constructor(
         public ptr:T
     ){}
+}
+
+export function webgl2_type_bytesize(type:GLenum){
+    switch(type){
+        case WebGL2RenderingContext.FLOAT: return 4
+        case WebGL2RenderingContext.INT: return 4
+        default: 
+            throw geterror("type in not implemented")
+    }
+}
+
+export function deepFreeze<T>(obj: T): Readonly<T> {
+    Object.freeze(obj);
+    Object.getOwnPropertyNames(obj).forEach((prop) => {
+    const value = (obj as any)[prop];
+
+    if(value && (typeof value === "object" || typeof value === "function") && !Object.isFrozen(value)) {
+        deepFreeze(value);
+    }
+    });
+
+    return obj as Readonly<T>;
 }

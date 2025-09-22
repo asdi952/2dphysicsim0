@@ -1,7 +1,7 @@
 import { AssertError, exit, geterror, printErrorStack } from "./error";
 import { createCounter, getmodelmat, makeTuple, MWritable, Signal, Transform2D, Vec2, type Tuple } from "./primitives";
 import { RenderEngine } from "./render/engine";
-import { generate_elmindex, MeshV0 } from "./render/mesh";
+import { generate_elmindex, MeshPrimitiveData, MeshV0, MeshV1, MeshVertexData, MeshVertexDataFormat } from "./render/mesh";
 import { Canvas, RenderInstance, RenderObjV0, RenderWorld, Viewport } from "./render/render";
 import { ShaderV0 } from "./render/shader";
 import { DataResourcer } from "./resourcer";
@@ -19,6 +19,14 @@ async function app(sim: Sim){
         2,3,
         -1, 0,
     ])
+
+    const meshv1 = new MeshV1(
+        new MeshPrimitiveData(generate_elmindex(mesh_vertex), WebGL2RenderingContext.TRIANGLES),
+        new MeshVertexData(
+            mesh_vertex,
+            new MeshVertexDataFormat( WebGL2RenderingContext.FLOAT, 2, 0, mesh_vertex.length,)
+        )
+    )
 
     const mesh = new MeshV0(mesh_vertex, generate_elmindex(mesh_vertex))
     const shader = new ShaderV0()
